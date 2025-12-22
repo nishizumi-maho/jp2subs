@@ -59,7 +59,14 @@ def _choose_asset(candidate: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def select_windows_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     assets: Iterable[dict[str, Any]] = release_data.get("assets", [])
-    ordered_patterns = [r"llama-.*-bin-win-cuda-x64\.zip", r"llama-.*-bin-win-x64\.zip"]
+    ordered_patterns = [
+        r"llama-bin-win-avx2-x64\.zip",
+        r"llama-.*-bin-win-avx2-x64\.zip",
+        r"llama-bin-win-x64\.zip",
+        r"llama-.*-bin-win-x64\.zip",
+        r"llama-bin-win-sse2-x64\.zip",
+        r"llama-.*-bin-win-sse2-x64\.zip",
+    ]
     for pattern in ordered_patterns:
         candidates = [a for a in assets if re.fullmatch(pattern, a.get("name", ""))]
         if candidates:

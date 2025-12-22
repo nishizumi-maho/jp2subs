@@ -7,6 +7,7 @@ from typing import List
 
 from .. import asr, audio, romanizer, subtitles, translation, video
 from .. import io as io_mod
+from ..config import load_config
 from ..paths import default_workdir_for_input
 from ..progress import ProgressEvent, STAGE_RANGES, stage_percent
 from .state import FinalizeJob, PipelineJob
@@ -72,6 +73,7 @@ class PipelineWorker(QtCore.QRunnable if QtCore else object):  # type: ignore[mi
         )
         master_path = workdir / "master.json"
         subtitles_root: List[Path] = []
+        languages_for_export: List[str] = ["ja"]
 
         io_mod.save_master(doc, master_path)
 
@@ -81,21 +83,30 @@ class PipelineWorker(QtCore.QRunnable if QtCore else object):  # type: ignore[mi
             io_mod.save_master(doc, master_path)
 
         if self.job.languages:
-            self._emit_stage_start("Translate")
-            doc = translation.translate_document(
-                doc,
-                target_langs=self.job.languages,
-                mode=self.job.translation_mode,
-                provider=self.job.translation_provider,
-                block_size=20,
-                glossary=None,
-                on_progress=self._emit_progress,
-                is_cancelled=self._is_cancelled,
-                register_subprocess=self._register_process,
-            )
-            io_mod.save_master(doc, master_path)
+            cfg = load_config()
+            cfg.translation.provider = self.job.translation_provider
+            ok, reason = translation.is_translation_available(cfg)
+            if ok:
+                self._emit_stage_start("Translate")
+                doc = translation.translate_document(
+                    doc,
+                    target_langs=self.job.languages,
+                    mode=self.job.translation_mode,
+                    provider=self.job.translation_provider,
+                    block_size=20,
+                    glossary=None,
+                    on_progress=self._emit_progress,
+                    is_cancelled=self._is_cancelled,
+                    register_subprocess=self._register_process,
+                )
+                io_mod.save_master(doc, master_path)
+                languages_for_export = list(self.job.languages)
+            else:
+                self.signals.log.emit(
+                    f"Translation disabled: {reason} Continuing with Japanese subtitles only."
+                )
 
-        languages = self.job.languages or ["ja"]
+        languages = languages_for_export
         self._emit_stage_start("Export")
         for index, lang in enumerate(languages, start=1):
             output_path = workdir / f"subs_{lang}.{self.job.fmt}"
