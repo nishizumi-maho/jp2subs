@@ -228,8 +228,8 @@ def write_subtitles(
             ProgressEvent(
                 stage="Export",
                 percent=stage_percent("Export", 1),
-                message="Exportando...",
-                detail=f"Escrevendo {path.name}",
+                message="Exporting...",
+                detail=f"Writing {path.name}",
             )
         )
     path.write_text(content, encoding="utf-8")

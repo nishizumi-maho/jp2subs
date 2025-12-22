@@ -182,7 +182,7 @@ class LocalLlamaCPPProvider(TranslationProvider):
                         proc.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         proc.kill()
-                    raise RuntimeError("Job cancelado")
+                    raise RuntimeError("Job cancelled")
                 continue
         if proc.returncode != 0:
             raise RuntimeError(f"llama.cpp exited with code {proc.returncode}")
@@ -297,7 +297,7 @@ def _translate_lang(
     blocks_in_lang = (len(doc.segments) + block_size - 1) // block_size
     for block_index, start in enumerate(range(0, len(doc.segments), block_size), start=1):
         if is_cancelled and is_cancelled():
-            raise RuntimeError("Job cancelado")
+            raise RuntimeError("Job cancelled")
         block = doc.segments[start : start + block_size]
         source_lines = [seg.ja_raw for seg in block]
         draft = provider_impl.translate_block(

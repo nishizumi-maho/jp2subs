@@ -20,6 +20,13 @@ def transcribe_audio(
     temperature: float = 0.0,
     beam_size: int = 5,
     device: Optional[str] = "auto",
+    best_of: int | None = None,
+    patience: float | None = None,
+    length_penalty: float | None = None,
+    word_timestamps: bool = True,
+    threads: int | None = None,
+    compute_type: str | None = None,
+    extra_args: dict | None = None,
     *,
     on_progress: Callable[[ProgressEvent], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
@@ -39,31 +46,48 @@ def transcribe_audio(
             ProgressEvent(stage="Transcribe", percent=transcribe_time_percent(0, 1), message="Transcribing (ASR)...")
         )
     audio_duration = _probe_duration(audio_path)
-    model = _create_model_with_fallback(WhisperModel, model_size=model_size, device=device)
+    model = _create_model_with_fallback(
+        WhisperModel,
+        model_size=model_size,
+        device=device,
+        threads=threads,
+        compute_type=compute_type,
+    )
+    asr_kwargs = {
+        "language": "ja",
+        "vad_filter": vad_filter,
+        "temperature": temperature,
+        "beam_size": beam_size,
+        "word_timestamps": word_timestamps,
+    }
+    if best_of is not None:
+        asr_kwargs["best_of"] = best_of
+    if patience is not None:
+        asr_kwargs["patience"] = patience
+    if length_penalty is not None:
+        asr_kwargs["length_penalty"] = length_penalty
+    if extra_args:
+        asr_kwargs.update(extra_args)
     segments_iter, info = model.transcribe(
         str(audio_path),
-        language="ja",
-        vad_filter=vad_filter,
-        temperature=temperature,
-        beam_size=beam_size,
-        word_timestamps=True,
+        **asr_kwargs,
     )
 
     segments: List[Segment] = []
     word_count = 0
     for i, segment in enumerate(_iter_segments(segments_iter), start=1):
         if is_cancelled and is_cancelled():
-            raise RuntimeError("Job cancelado")
+            raise RuntimeError("Job cancelled")
 
         words = segment.get("words") or []
         word_count += len(words)
         last_end_time = float(segment["end"])
         detail_parts = [
-            f"Tempo: {format_clock(last_end_time)} / {format_clock(audio_duration)}",
-            f"Segmentos: {i}",
+            f"Time: {format_clock(last_end_time)} / {format_clock(audio_duration)}",
+            f"Segments: {i}",
         ]
         if words:
-            detail_parts.append(f"Palavras: {word_count}")
+            detail_parts.append(f"Words: {word_count}")
         segments.append(
             Segment(
                 id=i,
@@ -91,11 +115,18 @@ def transcribe_audio(
     return MasterDocument(meta=meta, segments=segments)
 
 
-def _create_model_with_fallback(WhisperModel, *, model_size: str, device: Optional[str]):
+def _create_model_with_fallback(
+    WhisperModel, *, model_size: str, device: Optional[str], threads: int | None = None, compute_type: str | None = None
+):
     normalized_device = (device or "auto").lower()
 
     def _build(target: str):
-        return WhisperModel(model_size, device=target)
+        kwargs = {}
+        if threads:
+            kwargs["cpu_threads"] = threads
+        if compute_type:
+            kwargs["compute_type"] = compute_type
+        return WhisperModel(model_size, device=target, **kwargs)
 
     if normalized_device == "auto":
         try:

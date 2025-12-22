@@ -62,6 +62,11 @@ jp2subs sidecar input.mkv workdir/subs_en.ass --out-dir releases
 
 Tip: leave the translation language field blank in the GUI/wizard to run transcription-only (Japanese transcripts + `subs_ja.*`). Translation is optional.
 
+### Configure inside the app
+- Open the **Settings** tab in the GUI to edit `ffmpeg_path`, default ASR model/beam/vad/mono, subtitle format, and translation provider credentials.
+- Use **Save** to write changes immediately to `%APPDATA%/jp2subs/config.toml` (or `~/.config/jp2subs` on non-Windows). **Load** refreshes from disk and **Reset** restores built-in defaults.
+- The **Pipeline** tab exposes advanced ASR overrides (threads, patience, length penalty, compute type, raw extra args) and highlights each stage as it runs.
+
 ## Enable local translation (Windows)
 1. **Install jp2subs and extras**
    - Python 3.11+
