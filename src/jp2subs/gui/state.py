@@ -23,6 +23,13 @@ class PipelineJob:
     model_size: str = "large-v3"
     vad: bool = True
     mono: bool = False
+    best_of: int | None = None
+    patience: float | None = None
+    length_penalty: float | None = None
+    word_timestamps: bool = True
+    threads: int | None = None
+    compute_type: str | None = None
+    extra_asr_args: dict | None = None
 
 
 @dataclass

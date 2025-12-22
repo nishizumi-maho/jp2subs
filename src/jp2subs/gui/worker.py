@@ -5,11 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from .. import asr, audio, romanizer, subtitles, translation, video
-from .. import io as io_mod
-from ..config import load_config
-from ..paths import default_workdir_for_input
-from ..progress import ProgressEvent, STAGE_RANGES, stage_percent
+from .. import video
+from ..pipeline import PipelineCallbacks, PipelineRunner
 from .state import FinalizeJob, PipelineJob
 
 try:  # pragma: no cover - optional dependency
@@ -45,119 +42,21 @@ class PipelineWorker(QtCore.QRunnable if QtCore else object):  # type: ignore[mi
                     proc.kill()
 
     def _execute(self):  # pragma: no cover - GUI thread
-        self.signals.log.emit("Preparing pipeline...")
-        source = self.job.source
-        if not source:
-            raise RuntimeError("Source not provided")
-        workdir = self.job.workdir or default_workdir_for_input(source)
-        workdir = Path(workdir)
-        self.signals.log.emit(f"Workdir: {workdir}")
-
-        audio_path = audio.ingest_media(
-            source,
-            workdir,
-            mono=self.job.mono,
-            on_progress=self._emit_progress,
-            register_subprocess=self._register_process,
+        callbacks = PipelineCallbacks(
+            on_stage_start=lambda name: self.signals.stage_started.emit(name),
+            on_stage_done=lambda name: self.signals.stage_done.emit(name),
+            on_stage_progress=self._emit_progress,
+            on_log=self.signals.log.emit,
+            on_item_start=lambda path: self.signals.item_started.emit(str(path)),
+            on_item_done=lambda path, outputs: self.signals.item_done.emit(str(path), outputs),
         )
-        self._check_cancel()
-        doc = asr.transcribe_audio(
-            audio_path,
-            model_size=self.job.model_size,
-            vad_filter=self.job.vad,
-            temperature=0.0,
-            beam_size=self.job.beam_size,
-            device="auto",
-            on_progress=self._emit_progress,
-            is_cancelled=self._is_cancelled,
-        )
-        master_path = workdir / "master.json"
-        subtitles_root: List[Path] = []
-        languages_for_export: List[str] = ["ja"]
+        runner = PipelineRunner(callbacks)
+        runner.run(self.job)
 
-        io_mod.save_master(doc, master_path)
-
-        if self.job.generate_romaji:
-            self._emit_stage_start("Romanize")
-            doc = romanizer.romanize_segments(doc, on_progress=self._emit_progress)
-            io_mod.save_master(doc, master_path)
-
-        if self.job.languages:
-            cfg = load_config()
-            cfg.translation.provider = self.job.translation_provider
-            ok, reason = translation.is_translation_available(cfg)
-            if ok:
-                self._emit_stage_start("Translate")
-                doc = translation.translate_document(
-                    doc,
-                    target_langs=self.job.languages,
-                    mode=self.job.translation_mode,
-                    provider=self.job.translation_provider,
-                    block_size=20,
-                    glossary=None,
-                    on_progress=self._emit_progress,
-                    is_cancelled=self._is_cancelled,
-                    register_subprocess=self._register_process,
-                )
-                io_mod.save_master(doc, master_path)
-                languages_for_export = list(self.job.languages)
-            else:
-                self.signals.log.emit(
-                    f"Translation disabled: {reason} Continuing with Japanese subtitles only."
-                )
-
-        languages = languages_for_export
-        self._emit_stage_start("Export")
-        for index, lang in enumerate(languages, start=1):
-            output_path = workdir / f"subs_{lang}.{self.job.fmt}"
-            progress_fraction = index / max(1, len(languages))
-            self._emit_progress(
-                ProgressEvent(
-                    stage="Export",
-                    percent=self._stage_percent("Export", progress_fraction),
-                    message="Exportando legendas...",
-                    detail=f"Escrevendo {output_path.name}",
-                )
-            )
-            subtitles.write_subtitles(
-                doc,
-                output_path,
-                self.job.fmt,
-                lang=lang,
-                secondary=self.job.bilingual,
-            )
-            subtitles_root.append(output_path)
-            self.signals.log.emit(f"Exportado: {output_path}")
-
-        self._emit_progress(
-            ProgressEvent(stage="Export", percent=self._stage_percent("Export", 1), message="Export complete")
-        )
-
-        self.signals.results.emit(subtitles_root)
-        self.signals.stage.emit("Complete")
-        self.signals.detail.emit("")
-
-    def _check_cancel(self):  # pragma: no cover - GUI thread
-        if self._cancelled:
-            raise RuntimeError("Job cancelado")
-
-    def _is_cancelled(self) -> bool:
-        return self._cancelled
-
-    def _register_process(self, proc: subprocess.Popen) -> None:
-        self._processes.append(proc)
-
-    def _emit_progress(self, event: ProgressEvent) -> None:
+    def _emit_progress(self, event):  # pragma: no cover - GUI thread
         self.signals.progress.emit(event.percent)
         self.signals.stage.emit(event.message)
         self.signals.detail.emit(event.detail or "")
-
-    def _emit_stage_start(self, stage: str) -> None:
-        start_percent, _ = STAGE_RANGES.get(stage, (0, 100))
-        self._emit_progress(ProgressEvent(stage=stage, percent=start_percent, message=f"{stage}..."))
-
-    def _stage_percent(self, stage: str, fraction: float) -> int:
-        return stage_percent(stage, fraction)
 
 
 class FinalizeWorker(QtCore.QRunnable if QtCore else object):  # type: ignore[misc]
@@ -205,6 +104,10 @@ class WorkerSignals(QtCore.QObject if QtCore else object):  # type: ignore[misc]
         detail = QtCore.Signal(str)
         results = QtCore.Signal(list)
         log = QtCore.Signal(str)
+        stage_started = QtCore.Signal(str)
+        stage_done = QtCore.Signal(str)
+        item_started = QtCore.Signal(str)
+        item_done = QtCore.Signal(str, list)
     else:  # pragma: no cover - no Qt
         pass
 

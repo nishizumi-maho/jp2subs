@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List
 
 from ..paths import default_workdir_for_input
-from .state import FinalizeJob, PipelineJob
+from .state import FinalizeJob, PipelineJob, load_app_state, persist_app_state
 from .worker import FinalizeWorker, PipelineWorker
 
 try:  # pragma: no cover - optional dependency
@@ -34,6 +34,11 @@ class PipelineTab(BaseWidget):
     def _setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
+        body = QtWidgets.QHBoxLayout()
+        self.stage_list = StageListWidget()
+        body.addWidget(self.stage_list, 1)
+
+        main_area = QtWidgets.QVBoxLayout()
         file_row = QtWidgets.QHBoxLayout()
         self.source_list = QtWidgets.QListWidget()
         self.source_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -57,7 +62,7 @@ class PipelineTab(BaseWidget):
         workdir_row.addWidget(self.workdir_edit)
         workdir_row.addWidget(workdir_btn)
 
-        options_row = QtWidgets.QHBoxLayout()
+        form = QtWidgets.QFormLayout()
         self.model_input = QtWidgets.QLineEdit("large-v3")
         self.beam_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.beam_slider.setRange(1, 10)
@@ -65,28 +70,50 @@ class PipelineTab(BaseWidget):
         self.vad_check = QtWidgets.QCheckBox("VAD")
         self.vad_check.setChecked(True)
         self.mono_check = QtWidgets.QCheckBox("Mono")
-        options_row.addWidget(QtWidgets.QLabel("Model"))
-        options_row.addWidget(self.model_input)
-        options_row.addWidget(QtWidgets.QLabel("Beam"))
-        options_row.addWidget(self.beam_slider)
-        options_row.addWidget(self.vad_check)
-        options_row.addWidget(self.mono_check)
-
-        translation_row = QtWidgets.QHBoxLayout()
         self.lang_edit = QtWidgets.QLineEdit("en")
         self.bilingual_edit = QtWidgets.QLineEdit()
         self.romaji_check = QtWidgets.QCheckBox("Generate romaji")
-        translation_row.addWidget(QtWidgets.QLabel("Languages (comma-separated, blank = Japanese only)"))
-        translation_row.addWidget(self.lang_edit)
-        translation_row.addWidget(QtWidgets.QLabel("Bilingual"))
-        translation_row.addWidget(self.bilingual_edit)
-        translation_row.addWidget(self.romaji_check)
-
-        fmt_row = QtWidgets.QHBoxLayout()
         self.fmt_combo = QtWidgets.QComboBox()
         self.fmt_combo.addItems(["srt", "vtt", "ass"])
-        fmt_row.addWidget(QtWidgets.QLabel("Format"))
-        fmt_row.addWidget(self.fmt_combo)
+        form.addRow("Model", self.model_input)
+        form.addRow("Beam size", self.beam_slider)
+        form.addRow("Voice activity detection", self.vad_check)
+        form.addRow("Force mono", self.mono_check)
+        form.addRow("Languages (comma-separated)", self.lang_edit)
+        form.addRow("Bilingual secondary", self.bilingual_edit)
+        form.addRow("Generate romaji", self.romaji_check)
+        form.addRow("Subtitle format", self.fmt_combo)
+
+        advanced_box = QtWidgets.QGroupBox("Advanced ASR")
+        advanced_form = QtWidgets.QFormLayout()
+        self.best_of_spin = QtWidgets.QSpinBox()
+        self.best_of_spin.setRange(0, 10)
+        self.best_of_spin.setValue(0)
+        self.patience_spin = QtWidgets.QDoubleSpinBox()
+        self.patience_spin.setRange(0.0, 10.0)
+        self.patience_spin.setDecimals(2)
+        self.patience_spin.setValue(0.0)
+        self.length_penalty_spin = QtWidgets.QDoubleSpinBox()
+        self.length_penalty_spin.setRange(-5.0, 5.0)
+        self.length_penalty_spin.setDecimals(2)
+        self.length_penalty_spin.setValue(0.0)
+        self.word_ts_check = QtWidgets.QCheckBox("Word timestamps")
+        self.word_ts_check.setChecked(True)
+        self.thread_spin = QtWidgets.QSpinBox()
+        self.thread_spin.setRange(0, 64)
+        self.thread_spin.setValue(0)
+        self.compute_combo = QtWidgets.QComboBox()
+        self.compute_combo.addItems(["default", "float16", "int8", "int8_float16"])
+        self.extra_args_edit = QtWidgets.QPlainTextEdit()
+        self.extra_args_edit.setPlaceholderText("key=value pairs, one line or space separated")
+        advanced_form.addRow("Best of (0=auto)", self.best_of_spin)
+        advanced_form.addRow("Patience", self.patience_spin)
+        advanced_form.addRow("Length penalty", self.length_penalty_spin)
+        advanced_form.addRow("Word timestamps", self.word_ts_check)
+        advanced_form.addRow("Threads (0=auto)", self.thread_spin)
+        advanced_form.addRow("Compute type", self.compute_combo)
+        advanced_form.addRow("Extra ASR args", self.extra_args_edit)
+        advanced_box.setLayout(advanced_form)
 
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -109,20 +136,21 @@ class PipelineTab(BaseWidget):
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._cancel_job)
 
-        layout.addLayout(file_row)
-        layout.addLayout(workdir_row)
-        layout.addLayout(options_row)
-        layout.addLayout(translation_row)
-        layout.addLayout(fmt_row)
-        layout.addLayout(progress_box)
+        main_area.addLayout(file_row)
+        main_area.addLayout(workdir_row)
+        main_area.addLayout(form)
+        main_area.addWidget(advanced_box)
+        main_area.addLayout(progress_box)
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addWidget(self.run_btn)
         btn_row.addWidget(self.cancel_btn)
-        layout.addLayout(btn_row)
-        layout.addWidget(QtWidgets.QLabel("Log"))
-        layout.addWidget(self.log_view)
-        layout.addWidget(QtWidgets.QLabel("Generated files"))
-        layout.addWidget(self.results_list)
+        main_area.addLayout(btn_row)
+        main_area.addWidget(QtWidgets.QLabel("Log"))
+        main_area.addWidget(self.log_view)
+        main_area.addWidget(QtWidgets.QLabel("Generated files"))
+        main_area.addWidget(self.results_list)
+        body.addLayout(main_area, 4)
+        layout.addLayout(body)
 
     def _choose_workdir(self):  # pragma: no cover - GUI
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Workdir")
@@ -149,6 +177,7 @@ class PipelineTab(BaseWidget):
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.results_list.clear()
+        self._reset_stage_list()
         self._start_next_job()
 
     def _on_failed(self, msg: str):  # pragma: no cover - GUI
@@ -215,6 +244,8 @@ class PipelineTab(BaseWidget):
         worker.signals.progress.connect(self.progress_bar.setValue)
         worker.signals.stage.connect(self.stage_label.setText)
         worker.signals.detail.connect(self.detail_label.setText)
+        worker.signals.stage_started.connect(self._on_stage_started)
+        worker.signals.stage_done.connect(self._on_stage_done)
         if self.thread_pool:
             self.thread_pool.start(worker)
 
@@ -230,7 +261,40 @@ class PipelineTab(BaseWidget):
         job.languages = [lang.strip() for lang in self.lang_edit.text().split(",") if lang.strip()]
         job.bilingual = self.bilingual_edit.text() or None
         job.fmt = self.fmt_combo.currentText()
+        job.best_of = self.best_of_spin.value() or None
+        job.patience = self.patience_spin.value() or None
+        job.length_penalty = self.length_penalty_spin.value() or None
+        job.word_timestamps = self.word_ts_check.isChecked()
+        job.threads = self.thread_spin.value() or None
+        compute_type = self.compute_combo.currentText()
+        job.compute_type = None if compute_type == "default" else compute_type
+        job.extra_asr_args = self._parse_extra_args(self.extra_args_edit.toPlainText())
         return job
+
+    def _reset_stage_list(self):  # pragma: no cover - GUI
+        for i in range(self.stage_list.count()):
+            item = self.stage_list.item(i)
+            base = item.text().replace("✓ ", "")
+            item.setText(base)
+            font = item.font()
+            font.setBold(False)
+            item.setFont(font)
+            item.setBackground(QtGui.QBrush())
+
+    def _on_stage_started(self, name: str):  # pragma: no cover - GUI
+        self.stage_list.highlight(name)
+
+    def _on_stage_done(self, name: str):  # pragma: no cover - GUI
+        self.stage_list.mark_done(name)
+
+    def _parse_extra_args(self, raw: str) -> dict | None:
+        parts = [token.strip() for token in raw.replace("\n", " ").split(" ") if token.strip()]
+        payload: dict[str, str] = {}
+        for token in parts:
+            if "=" in token:
+                key, value = token.split("=", 1)
+                payload[key.strip()] = value.strip()
+        return payload or None
 
 
 class FinalizeTab(BaseWidget):
@@ -309,12 +373,146 @@ class FinalizeTab(BaseWidget):
 class SettingsTab(BaseWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.cfg = load_app_state()
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(
-            QtWidgets.QLabel(
-                "Configure paths and defaults in the config.toml file located at %APPDATA%/jp2subs."
-            )
-        )
+        form = QtWidgets.QFormLayout()
+
+        self.ffmpeg_edit = QtWidgets.QLineEdit(self.cfg.ffmpeg_path or "")
+        ffmpeg_btn = QtWidgets.QPushButton("Browse")
+        ffmpeg_btn.clicked.connect(self._choose_ffmpeg)
+        ffmpeg_row = QtWidgets.QHBoxLayout()
+        ffmpeg_row.addWidget(self.ffmpeg_edit)
+        ffmpeg_row.addWidget(ffmpeg_btn)
+        form.addRow("ffmpeg path", ffmpeg_row)
+
+        self.model_size_edit = QtWidgets.QLineEdit(self.cfg.defaults.model_size)
+        self.beam_size_spin = QtWidgets.QSpinBox()
+        self.beam_size_spin.setRange(1, 10)
+        self.beam_size_spin.setValue(self.cfg.defaults.beam_size)
+        self.vad_check = QtWidgets.QCheckBox()
+        self.vad_check.setChecked(self.cfg.defaults.vad)
+        self.mono_check = QtWidgets.QCheckBox()
+        self.mono_check.setChecked(self.cfg.defaults.mono)
+        self.subtitle_fmt_combo = QtWidgets.QComboBox()
+        self.subtitle_fmt_combo.addItems(["srt", "vtt", "ass"])
+        idx = self.subtitle_fmt_combo.findText(self.cfg.defaults.subtitle_format)
+        if idx >= 0:
+            self.subtitle_fmt_combo.setCurrentIndex(idx)
+
+        form.addRow("Model size", self.model_size_edit)
+        form.addRow("Beam size", self.beam_size_spin)
+        form.addRow("VAD", self.vad_check)
+        form.addRow("Force mono", self.mono_check)
+        form.addRow("Subtitle format", self.subtitle_fmt_combo)
+
+        self.provider_combo = QtWidgets.QComboBox()
+        self.provider_combo.addItems(["local", "api"])
+        idx = self.provider_combo.findText(self.cfg.translation.provider)
+        if idx >= 0:
+            self.provider_combo.setCurrentIndex(idx)
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems(["llm", "draft+postedit"])
+        idx = self.mode_combo.findText(self.cfg.translation.mode)
+        if idx >= 0:
+            self.mode_combo.setCurrentIndex(idx)
+        self.api_url_edit = QtWidgets.QLineEdit(self.cfg.translation.api_url or "")
+        self.api_key_edit = QtWidgets.QLineEdit(self.cfg.translation.api_key or "")
+        self.llama_bin_edit = QtWidgets.QLineEdit(self.cfg.translation.llama_binary or "")
+        llama_bin_btn = QtWidgets.QPushButton("Browse")
+        llama_bin_btn.clicked.connect(lambda: self._pick_file(self.llama_bin_edit))
+        bin_row = QtWidgets.QHBoxLayout()
+        bin_row.addWidget(self.llama_bin_edit)
+        bin_row.addWidget(llama_bin_btn)
+        self.llama_model_edit = QtWidgets.QLineEdit(self.cfg.translation.llama_model or "")
+        llama_model_btn = QtWidgets.QPushButton("Browse")
+        llama_model_btn.clicked.connect(lambda: self._pick_file(self.llama_model_edit))
+        model_row = QtWidgets.QHBoxLayout()
+        model_row.addWidget(self.llama_model_edit)
+        model_row.addWidget(llama_model_btn)
+        form.addRow("Translation provider", self.provider_combo)
+        form.addRow("Mode", self.mode_combo)
+        form.addRow("API URL", self.api_url_edit)
+        form.addRow("API key", self.api_key_edit)
+        form.addRow("llama binary", bin_row)
+        form.addRow("llama model", model_row)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        save_btn = QtWidgets.QPushButton("Save")
+        save_btn.clicked.connect(self._save)
+        reload_btn = QtWidgets.QPushButton("Load")
+        reload_btn.clicked.connect(self._load)
+        reset_btn = QtWidgets.QPushButton("Reset to defaults")
+        reset_btn.clicked.connect(self._reset)
+        detect_btn = QtWidgets.QPushButton("Detect ffmpeg")
+        detect_btn.clicked.connect(self._detect_ffmpeg)
+        btn_row.addWidget(save_btn)
+        btn_row.addWidget(reload_btn)
+        btn_row.addWidget(reset_btn)
+        btn_row.addWidget(detect_btn)
+
+        layout.addLayout(form)
+        layout.addLayout(btn_row)
+        layout.addStretch(1)
+
+    def _choose_ffmpeg(self):  # pragma: no cover - GUI
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select ffmpeg")
+        if path:
+            self.ffmpeg_edit.setText(path)
+
+    def _pick_file(self, target: QtWidgets.QLineEdit):  # pragma: no cover - GUI
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select file")
+        if path:
+            target.setText(path)
+
+    def _save(self):
+        self.cfg.ffmpeg_path = self.ffmpeg_edit.text() or None
+        self.cfg.defaults.model_size = self.model_size_edit.text() or "large-v3"
+        self.cfg.defaults.beam_size = self.beam_size_spin.value()
+        self.cfg.defaults.vad = self.vad_check.isChecked()
+        self.cfg.defaults.mono = self.mono_check.isChecked()
+        self.cfg.defaults.subtitle_format = self.subtitle_fmt_combo.currentText()
+        self.cfg.translation.provider = self.provider_combo.currentText()
+        self.cfg.translation.mode = self.mode_combo.currentText()
+        self.cfg.translation.api_url = self.api_url_edit.text() or None
+        self.cfg.translation.api_key = self.api_key_edit.text() or None
+        self.cfg.translation.llama_binary = self.llama_bin_edit.text() or None
+        self.cfg.translation.llama_model = self.llama_model_edit.text() or None
+        persist_app_state(self.cfg)
+
+    def _load(self):
+        self.cfg = load_app_state()
+        self._sync_from_cfg()
+
+    def _reset(self):
+        self.cfg = type(self.cfg)()
+        self._sync_from_cfg()
+
+    def _detect_ffmpeg(self):
+        from ..config import detect_ffmpeg
+
+        detected = detect_ffmpeg(self.ffmpeg_edit.text() or None)
+        if detected:
+            self.ffmpeg_edit.setText(detected)
+
+    def _sync_from_cfg(self):
+        self.ffmpeg_edit.setText(self.cfg.ffmpeg_path or "")
+        self.model_size_edit.setText(self.cfg.defaults.model_size)
+        self.beam_size_spin.setValue(self.cfg.defaults.beam_size)
+        self.vad_check.setChecked(self.cfg.defaults.vad)
+        self.mono_check.setChecked(self.cfg.defaults.mono)
+        idx = self.subtitle_fmt_combo.findText(self.cfg.defaults.subtitle_format)
+        if idx >= 0:
+            self.subtitle_fmt_combo.setCurrentIndex(idx)
+        idx = self.provider_combo.findText(self.cfg.translation.provider)
+        if idx >= 0:
+            self.provider_combo.setCurrentIndex(idx)
+        idx = self.mode_combo.findText(self.cfg.translation.mode)
+        if idx >= 0:
+            self.mode_combo.setCurrentIndex(idx)
+        self.api_url_edit.setText(self.cfg.translation.api_url or "")
+        self.api_key_edit.setText(self.cfg.translation.api_key or "")
+        self.llama_bin_edit.setText(self.cfg.translation.llama_binary or "")
+        self.llama_model_edit.setText(self.cfg.translation.llama_model or "")
 
 
 class MainWindow(QtWidgets.QMainWindow if QtWidgets else object):  # type: ignore[misc]
@@ -329,3 +527,46 @@ class MainWindow(QtWidgets.QMainWindow if QtWidgets else object):  # type: ignor
         tabs.addTab(SettingsTab(), "Settings")
         self.setCentralWidget(tabs)
 
+
+STAGES = [
+    "Ingest",
+    "Transcribe",
+    "Romanize",
+    "Translate",
+    "Export",
+    "Finalize",
+]
+
+
+class StageListWidget(QtWidgets.QListWidget if QtWidgets else object):  # type: ignore[misc]
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        if not QtWidgets:
+            return
+        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        for stage in STAGES:
+            self.addItem(stage)
+
+    def highlight(self, stage: str):  # pragma: no cover - GUI
+        for i in range(self.count()):
+            item = self.item(i)
+            base = item.text().replace("✓ ", "")
+            item.setText(base)
+            font = item.font()
+            font.setBold(False)
+            item.setFont(font)
+            item.setBackground(QtGui.QBrush())
+        matches = self.findItems(stage, QtCore.Qt.MatchStartsWith)
+        if matches:
+            item = matches[0]
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            item.setBackground(QtGui.QColor("#cfe3ff"))
+
+    def mark_done(self, stage: str):  # pragma: no cover - GUI
+        matches = self.findItems(stage, QtCore.Qt.MatchStartsWith)
+        if matches:
+            item = matches[0]
+            base = item.text().replace("✓ ", "")
+            item.setText(f"✓ {base}")
