@@ -128,6 +128,14 @@ def translate(
 ):
     """Translate segments to the requested languages."""
 
+    cfg = _summarize_config()
+    cfg.translation.provider = provider
+    ok, reason = translation.is_translation_available(cfg)
+    if not ok:
+        raise typer.BadParameter(
+            f"Translation is not configured; {reason} Configure llama binary + GGUF model or API URL."
+        )
+
     doc = io.load_master(master)
     glossary_data = json.loads(glossary.read_text(encoding="utf-8")) if glossary else None
     doc = translation.translate_document(
@@ -379,8 +387,18 @@ def _wizard_impl():
     )
     target_langs = _parse_optional_languages(langs_raw)
 
-    translation_mode = Prompt.ask("Translation mode", choices=["llm", "draft+postedit"], default=cfg.translation.mode)
-    provider = Prompt.ask("Translation provider", choices=["local", "api"], default=cfg.translation.provider)
+    translation_mode = cfg.translation.mode
+    provider = cfg.translation.provider
+    if target_langs:
+        translation_mode = Prompt.ask("Translation mode", choices=["llm", "draft+postedit"], default=cfg.translation.mode)
+        provider = Prompt.ask("Translation provider", choices=["local", "api"], default=cfg.translation.provider)
+        cfg.translation.provider = provider
+        ok, reason = translation.is_translation_available(cfg)
+        if not ok:
+            console.print(
+                f"[yellow]Translation is not configured; continuing with transcription only. ({reason})[/yellow]"
+            )
+            target_langs = []
     fmt_choice = _prompt_choice("Subtitle format", {"1": "srt", "2": "vtt", "3": "ass"}, "1")
     fmt = {"1": "srt", "2": "vtt", "3": "ass"}[fmt_choice]
     bilingual = Prompt.ask("Bilingual secondary language (optional, e.g., ja)", default="") or None

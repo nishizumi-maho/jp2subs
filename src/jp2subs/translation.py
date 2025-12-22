@@ -5,12 +5,69 @@ import os
 import shlex
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Sequence
 
 from rich.console import Console
 
+from . import config as config_mod
 from .models import MasterDocument
+from .paths import strip_quotes
 from .progress import ProgressEvent, stage_percent
+
+
+def _normalize_path(raw: str | None) -> Path | None:
+    if not raw:
+        return None
+    cleaned = strip_quotes(str(raw)).strip()
+    if not cleaned:
+        return None
+    return Path(cleaned).expanduser()
+
+
+def _load_config() -> config_mod.AppConfig | None:
+    try:
+        return config_mod.load_config()
+    except Exception:  # pragma: no cover - config loading failures are not critical here
+        return None
+
+
+def is_translation_available(cfg: config_mod.AppConfig | None = None) -> tuple[bool, str]:
+    """Check whether translation dependencies are ready.
+
+    Returns a tuple ``(ok, reason)`` where ``ok`` is ``True`` when translation
+    can run. When ``ok`` is ``False`` the ``reason`` contains a short
+    human-readable explanation.
+    """
+
+    cfg = cfg or _load_config()
+    translation_cfg = cfg.translation if cfg else config_mod.TranslationConfig()
+    provider = (translation_cfg.provider or "echo").lower()
+
+    if provider == "echo":
+        return True, ""
+
+    if provider == "api":
+        url = os.getenv("JP2SUBS_API_URL") or translation_cfg.api_url
+        if not url:
+            return False, "API URL missing for translation provider=api."
+        return True, ""
+
+    if provider == "local":
+        binary_path = _normalize_path(os.getenv("JP2SUBS_LLAMA_BINARY") or translation_cfg.llama_binary)
+        model_path = _normalize_path(os.getenv("JP2SUBS_LLAMA_MODEL") or translation_cfg.llama_model)
+
+        if not binary_path:
+            return False, "llama.cpp binary not configured (set translation.llama_binary or JP2SUBS_LLAMA_BINARY)."
+        if not binary_path.exists():
+            return False, f"llama.cpp binary not found: {binary_path}"
+        if not model_path:
+            return False, "GGUF model not configured (set translation.llama_model or JP2SUBS_LLAMA_MODEL)."
+        if not model_path.exists():
+            return False, f"GGUF model not found: {model_path}"
+        return True, ""
+
+    return False, f"Unsupported translation provider: {provider}"
 
 console = Console()
 
@@ -237,6 +294,7 @@ def _translate_lang(
 ) -> int:
     doc.ensure_translation_key(target_lang)
 
+    blocks_in_lang = (len(doc.segments) + block_size - 1) // block_size
     for block_index, start in enumerate(range(0, len(doc.segments), block_size), start=1):
         if is_cancelled and is_cancelled():
             raise RuntimeError("Job cancelado")
@@ -265,7 +323,7 @@ def _translate_lang(
         completed_blocks += 1
         if on_progress:
             percent = stage_percent("Translate", completed_blocks / max(1, total_blocks))
-            detail = f"Translating blocks: {completed_blocks}/{total_blocks} ({target_lang})"
+            detail = f"Block {block_index}/{blocks_in_lang} ({target_lang})"
             translated_count = start + len(block)
             detail += f" | Segments {translated_count}/{len(doc.segments)}"
             on_progress(ProgressEvent(stage="Translate", percent=percent, message="Translating...", detail=detail))
@@ -279,14 +337,18 @@ def _provider_from_name(name: str) -> TranslationProvider:
     if name == "echo":
         return EchoProvider()
     if name == "local":
-        binary = os.getenv("JP2SUBS_LLAMA_BINARY", "llama.exe")
-        model = os.getenv("JP2SUBS_LLAMA_MODEL", "model.gguf")
+        cfg = _load_config()
+        binary_path = _normalize_path(os.getenv("JP2SUBS_LLAMA_BINARY") or (cfg.translation.llama_binary if cfg else None))
+        model_path = _normalize_path(os.getenv("JP2SUBS_LLAMA_MODEL") or (cfg.translation.llama_model if cfg else None))
+        binary = str(binary_path) if binary_path else os.getenv("JP2SUBS_LLAMA_BINARY", "llama.exe")
+        model = str(model_path) if model_path else os.getenv("JP2SUBS_LLAMA_MODEL", "model.gguf")
         return LocalLlamaCPPProvider(binary_path=binary, model_path=model)
     if name == "api":
-        url = os.getenv("JP2SUBS_API_URL", "")
+        cfg = _load_config()
+        url = os.getenv("JP2SUBS_API_URL") or (cfg.translation.api_url if cfg else "")
         if not url:
             raise RuntimeError("JP2SUBS_API_URL is required for api provider")
-        key = os.getenv("JP2SUBS_API_KEY")
+        key = os.getenv("JP2SUBS_API_KEY") or (cfg.translation.api_key if cfg else None)
         return GenericAPIProvider(api_url=url, api_key=key)
     return EchoProvider()
 

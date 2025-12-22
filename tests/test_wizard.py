@@ -60,6 +60,7 @@ def test_wizard_runs_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.asr, "transcribe_audio", fake_transcribe)
     monkeypatch.setattr(cli.romanizer, "romanize_segments", fake_romanize)
     monkeypatch.setattr(cli.translation, "translate_document", fake_translate)
+    monkeypatch.setattr(cli.translation, "is_translation_available", lambda cfg=None: (True, ""))
     monkeypatch.setattr(cli.subtitles, "write_subtitles", fake_write_subtitles)
 
     inputs = "\n".join(
@@ -87,4 +88,64 @@ def test_wizard_runs_pipeline(tmp_path, monkeypatch):
     assert calls == ["ingest", "transcribe", "romanize", "translate", "export"]
 
     exported = workdir / "subs_en.srt"
+    assert exported.exists()
+
+
+def test_wizard_warns_when_translation_missing(tmp_path, monkeypatch):
+    media = tmp_path / "episode.mp4"
+    media.write_text("data", encoding="utf-8")
+
+    workdir = tmp_path / "custom_workdir"
+
+    calls: list[str] = []
+
+    def fake_ingest(path: Path, dest: Path, mono: bool = False) -> Path:
+        calls.append("ingest")
+        dest.mkdir(parents=True, exist_ok=True)
+        out = dest / "audio.flac"
+        out.write_text("audio", encoding="utf-8")
+        return out
+
+    def fake_transcribe(audio_path: Path, **_: object) -> MasterDocument:
+        calls.append("transcribe")
+        return _dummy_doc()
+
+    def fake_write_subtitles(doc: MasterDocument, path: Path, fmt: str, lang: str, secondary: str | None = None):
+        calls.append("export")
+        path.write_text(f"{fmt}-{lang}-{secondary or ''}", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(cli.audio, "ingest_media", fake_ingest)
+    monkeypatch.setattr(cli.asr, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(cli.romanizer, "romanize_segments", lambda doc: doc)
+    monkeypatch.setattr(cli.translation, "is_translation_available", lambda cfg=None: (False, "llama missing"))
+    monkeypatch.setattr(cli.translation, "translate_document", lambda *args, **kwargs: args[0])
+    monkeypatch.setattr(cli.subtitles, "write_subtitles", fake_write_subtitles)
+
+    inputs = "\n".join(
+        [
+            str(media),
+            str(workdir),
+            "2",  # stereo
+            "",  # model_size default
+            "",  # beam_size default
+            "",  # vad default (on)
+            "1",  # device auto
+            "n",  # romaji
+            "en",  # languages
+            "",  # mode default
+            "",  # provider default
+            "1",  # format srt
+            "",  # bilingual
+            "",  # output type default
+        ]
+    )
+
+    result = runner.invoke(cli.app, ["wizard"], input=inputs + "\n")
+
+    assert result.exit_code == 0, result.output
+    assert "translation is not configured" in result.output.lower()
+    assert calls == ["ingest", "transcribe", "export"]
+
+    exported = workdir / "subs_ja.srt"
     assert exported.exists()

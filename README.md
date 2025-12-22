@@ -60,7 +60,46 @@ jp2subs hardcode input.mkv workdir/subs_en.ass --same-name --suffix .hard --crf 
 jp2subs sidecar input.mkv workdir/subs_en.ass --out-dir releases
 ```
 
-Tip: leave the translation language field blank in the GUI/wizard to produce Japanese-only transcripts and subtitles without running translation.
+Tip: leave the translation language field blank in the GUI/wizard to run transcription-only (Japanese transcripts + `subs_ja.*`). Translation is optional.
+
+## Enable local translation (Windows)
+1. **Install jp2subs and extras**
+   - Python 3.11+
+   - ffmpeg on PATH
+   - `pip install -e .`
+   - Optional extras: `pip install -e ".[gui,asr,llm]"`
+
+2. **Download llama.cpp (choose one)**
+   - Grab a prebuilt from `ggml-org/llama.cpp` releases (CPU, Vulkan, or CUDA).
+   - CPU (works everywhere)
+   - Vulkan (GPU-accelerated on many systems)
+   - CUDA (NVIDIA; requires compatible driver)
+   - jp2subs uses llama.cpp binaries (`llama-cli` or `llama-server`) for local translation; you must download them separately.
+   - Extract the release to `%APPDATA%\jp2subs\deps\llama.cpp\<version>\` and note the path to `llama-cli.exe`.
+
+3. **Download a GGUF model**
+   - Recommended: `Qwen/Qwen2.5-7B-Instruct-GGUF` (quant `Q4_K_M`).
+   - Download the `.gguf` file locally and point jp2subs to it.
+   - Some Hugging Face models are split; merge with `llama-gguf-split --merge part-* -o merged.gguf` if needed.
+
+4. **Configure jp2subs (config.toml or env)**
+   - `config.toml` example:
+
+     ```toml
+     [translation]
+     provider = "local"
+     mode = "llm"
+     llama_binary = "C:/Users/you/AppData/Roaming/jp2subs/deps/llama.cpp/vX.Y.Z/llama-cli.exe"
+     llama_model = "C:/models/qwen2.5-7b-instruct.Q4_K_M.gguf"
+     ```
+
+   - Environment variable alternative:
+     - `JP2SUBS_LLAMA_BINARY` → path to `llama-cli.exe`
+     - `JP2SUBS_LLAMA_MODEL` → path to your `.gguf`
+
+5. **Verify**
+   - Run `jp2subs translate ...` to confirm translation runs, or start the wizard/GUI.
+   - If translation is missing, jp2subs warns and continues with transcription-only so you still get Japanese transcripts and `subs_ja.*` files.
 
 ## Build a Windows executable (.exe)
 Install PyInstaller and the `gui` extra, then run the PowerShell script:
