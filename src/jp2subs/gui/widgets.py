@@ -312,7 +312,7 @@ class PipelineTab(BaseWidget):
         return payload or None
 
     def _sync_from_cfg(self):
-        """Mirror saved defaults into the pipeline form.""
+        """Mirror saved defaults into the pipeline form."""
         self.cfg = load_app_state()
         defaults = self.cfg.defaults
         self.model_input.setText(defaults.model_size)
