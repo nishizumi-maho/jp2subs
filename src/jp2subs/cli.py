@@ -1,7 +1,6 @@
 """Typer CLI for jp2subs."""
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import os
@@ -90,7 +89,7 @@ def transcribe(
     temperature: float = 0.0,
     beam_size: int = 5,
 ):
-    """Run ASR and produce master.json and Japanese transcripts."""
+    """Run ASR and produce master.json."""
 
     audio_path = input_path
     if audio.is_video(input_path):
@@ -106,7 +105,6 @@ def transcribe(
     )
     master_path = io.master_path_from_workdir(workdir)
     io.save_master(doc, master_path)
-    _write_transcripts(doc, workdir, prefix="transcript_ja", lang="ja")
     console.print(f"Master JSON saved to [bold]{master_path}[/bold]")
 
 
@@ -116,8 +114,8 @@ def romanize(master: Path, workdir: Path = typer.Option(Path("workdir"))):
     doc = io.load_master(master)
     doc = romanizer.romanize_segments(doc)
     io.save_master(doc, master)
-    _write_transcripts(doc, workdir, prefix="transcript_romaji", lang="ja", use_romaji=True)
-    console.print("Romaji added to master and transcripts generated.")
+    output_path = _write_romaji_subtitles(doc, workdir, fmt="srt")
+    console.print(f"Romaji subtitle written to [bold]{output_path}[/bold].")
 
 
 @app.command()
@@ -394,18 +392,14 @@ def _wizard_impl(open_workdir: bool = False):
         )
         master_path = io.master_path_from_workdir(workdir)
         io.save_master(doc, master_path)
-        _write_transcripts(doc, workdir, prefix="transcript_ja", lang="ja")
-        generated_paths.extend(
-            [master_path, workdir / "transcript_ja.txt", workdir / "transcript_ja.srt"]
-        )
+        generated_paths.append(master_path)
         return doc
 
     def stage_romanize(doc: MasterDocument) -> MasterDocument:
         doc = romanizer.romanize_segments(doc)
         master_path = io.master_path_from_workdir(workdir)
         io.save_master(doc, master_path)
-        _write_transcripts(doc, workdir, prefix="transcript_romaji", lang="ja", use_romaji=True)
-        generated_paths.extend([workdir / "transcript_romaji.txt", workdir / "transcript_romaji.srt"])
+        generated_paths.append(_write_romaji_subtitles(doc, workdir, fmt=fmt))
         return doc
 
     def stage_export(doc: MasterDocument) -> list[Path]:
@@ -624,12 +618,11 @@ def batch(
                         device=device,
                     )
                     io.save_master(doc, master_path)
-                    _write_transcripts(doc, workdir_path, prefix="transcript_ja", lang="ja")
                 elif stage == "romanize":
                     doc = doc or io.load_master(master_path)
                     doc = romanizer.romanize_segments(doc)
                     io.save_master(doc, master_path)
-                    _write_transcripts(doc, workdir_path, prefix="transcript_romaji", lang="ja", use_romaji=True)
+                    _write_romaji_subtitles(doc, workdir_path, fmt=fmt)
                 elif stage == "export":
                     doc = doc or io.load_master(master_path)
                     output_path = workdir_path / f"subs_ja.{fmt}"
@@ -661,28 +654,11 @@ def _marker_path(workdir: Path, stage: str) -> Path:
     return Path(workdir) / f".{stage}.done"
 
 
-def _write_transcripts(doc: MasterDocument, workdir: Path, prefix: str, lang: str, use_romaji: bool = False) -> None:
+def _write_romaji_subtitles(doc: MasterDocument, workdir: Path, fmt: str) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
-    text_path = workdir / f"{prefix}.txt"
-    srt_path = workdir / f"{prefix}.srt"
-
-    lines = []
-    payload_segments = []
-    for seg in doc.segments:
-        if use_romaji and seg.romaji:
-            lines.append(seg.romaji)
-            seg_copy = copy.deepcopy(seg)
-            seg_copy.translations = {lang: seg.romaji}
-            payload_segments.append(seg_copy)
-        elif lang == "ja":
-            lines.append(seg.ja_raw)
-            payload_segments.append(seg)
-        else:
-            lines.append(seg.translations.get(lang, ""))
-            payload_segments.append(seg)
-    text_path.write_text("\n".join(lines), encoding="utf-8")
-    srt_content = subtitles.render_srt(payload_segments, lang, None)
-    srt_path.write_text(srt_content, encoding="utf-8")
+    output_path = workdir / f"subs_romaji.{fmt}"
+    subtitles.write_romaji_subtitles(doc, output_path, fmt)
+    return output_path
 
 
 if __name__ == "__main__":  # pragma: no cover

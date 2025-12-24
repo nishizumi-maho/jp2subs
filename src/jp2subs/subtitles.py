@@ -1,6 +1,7 @@
 """Subtitle formatting utilities (SRT/VTT/ASS)."""
 from __future__ import annotations
 
+import copy
 from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional
@@ -235,3 +236,26 @@ def write_subtitles(
     path.write_text(content, encoding="utf-8")
     return path
 
+
+def write_romaji_subtitles(
+    doc: MasterDocument,
+    path: str | Path,
+    fmt: str,
+    *,
+    max_chars_per_line: int = MAX_CHARS_PER_LINE,
+    max_lines: int = MAX_LINES,
+    on_progress: Callable[[ProgressEvent], None] | None = None,
+) -> Path:
+    romaji_doc = copy.deepcopy(doc)
+    for segment in romaji_doc.segments:
+        segment.translations["romaji"] = segment.romaji or ""
+    return write_subtitles(
+        romaji_doc,
+        path,
+        fmt,
+        lang="romaji",
+        secondary=None,
+        max_chars_per_line=max_chars_per_line,
+        max_lines=max_lines,
+        on_progress=on_progress,
+    )
