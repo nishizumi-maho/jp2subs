@@ -226,15 +226,6 @@ You’ll be prompted to select a video, subtitle file, and output mode (sidecar/
 ## Translation
 Translation is no longer built into jp2subs. Use an external option such as DeepL, ChatGPT, or a local LLM runner to translate the generated Japanese transcripts before muxing them back with the hardcode/softcode/sidecar commands.
 
-## Build a Windows executable (.exe)
-Install PyInstaller and the `gui` extra, then run the PowerShell script:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-python -m pip install jp2subs[gui] pyinstaller
-pwsh scripts/build_exe.ps1
-```
-
 ## Screenshots
 
 ## Master JSON format
@@ -267,10 +258,6 @@ pytest
   - `jp2subs softcode <video> <subs> --same-name --container mkv` to mux (no re-encode; uses mov_text automatically for MP4).
   - `jp2subs hardcode <video> <subs> --suffix .hard --crf 18` to burn-in with libass, respecting ASS/SRT/VTT.
   - `jp2subs sidecar <video> <subs> --out-dir player\downloads` to copy/rename the subtitle, compatible with players that read external files.
-
-## Suggested roadmap
-- Add ASS style presets tuned for anime.
-- Optional richer UI.
 
 ## License
 MIT (see [LICENSE](LICENSE)).
