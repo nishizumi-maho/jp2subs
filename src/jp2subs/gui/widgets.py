@@ -49,6 +49,7 @@ class PipelineTab(BaseWidget):
 
         body = QtWidgets.QHBoxLayout()
         self.stage_list = StageListWidget()
+        self.stage_list.setVisible(False)
         body.addWidget(self.stage_list, 1)
 
         main_area = QtWidgets.QVBoxLayout()
@@ -87,6 +88,9 @@ class PipelineTab(BaseWidget):
         progress_box.addWidget(self.progress_bar)
         progress_box.addWidget(self.stage_label)
         progress_box.addWidget(self.detail_label)
+        self.progress_bar.setVisible(False)
+        self.stage_label.setVisible(False)
+        self.detail_label.setVisible(False)
 
         self.log_view = QtWidgets.QTextEdit()
         self.log_view.setReadOnly(True)
@@ -111,6 +115,12 @@ class PipelineTab(BaseWidget):
         layout.addLayout(body)
         self._sync_from_cfg()
 
+    def _set_progress_visible(self, visible: bool) -> None:
+        self.stage_list.setVisible(visible)
+        self.progress_bar.setVisible(visible)
+        self.stage_label.setVisible(visible)
+        self.detail_label.setVisible(visible)
+
     def _choose_workdir(self):  # pragma: no cover - GUI
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Workdir")
         if path:
@@ -133,6 +143,7 @@ class PipelineTab(BaseWidget):
         self.progress_bar.setValue(0)
         self.stage_label.setText("Preparing...")
         self.detail_label.setText("")
+        self._set_progress_visible(True)
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.results_list.clear()
@@ -157,6 +168,7 @@ class PipelineTab(BaseWidget):
     def _finalize_controls(self):  # pragma: no cover - GUI
         self.run_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
+        self._set_progress_visible(False)
 
     def _cancel_job(self):  # pragma: no cover - GUI
         if hasattr(self, "_worker"):
