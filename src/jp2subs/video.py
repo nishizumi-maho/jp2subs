@@ -23,6 +23,11 @@ def _escape_filter_path(path: Path) -> str:
         normalized.replace("\\", "/")
         .replace(":", r"\:")
         .replace(" ", r"\ ")
+        .replace("[", r"\[")
+        .replace("]", r"\]")
+        .replace(",", r"\,")
+        .replace(";", r"\;")
+        .replace("'", r"\'")
     )
 
 
@@ -212,4 +217,3 @@ def ffmpeg_version() -> str:
 
     first_line = result.stdout.splitlines()[0] if result.stdout else "ffmpeg version (unknown)"
     return first_line
-
