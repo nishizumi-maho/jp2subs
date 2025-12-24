@@ -494,7 +494,7 @@ class SettingsTab(BaseWidget):
         self.extra_args_edit.setPlaceholderText("key=value pairs, one line or space separated")
         self.extra_args_edit.setPlainText(self._format_extra_args(self.cfg.defaults.extra_asr_args))
 
-        form.addRow("Model size", self.model_size_edit)
+        form.addRow("Model size / HF repo / path", self.model_size_edit)
         form.addRow("Beam size", self.beam_size_spin)
         form.addRow("VAD", self.vad_check)
         form.addRow("Force mono", self.mono_check)

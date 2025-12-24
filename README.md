@@ -27,7 +27,7 @@ pip install jp2subs[gui]     # PySide6 for the desktop interface
 ```
 
 Models:
-- **faster-whisper**: download a model (e.g., `large-v3`) and keep it in the default cache (~AppData/Local/whisper).
+- **faster-whisper**: use a model size (e.g., `large-v3`), a Hugging Face repo ID (e.g., `JhonVanced/whisper-large-v3-japanese-4k-steps-ct2`), or a local CTranslate2 path. The model will be cached (default: `~AppData/Local/whisper` on Windows).
 
 ## Quickstart
 ```bash
