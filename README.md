@@ -1,6 +1,6 @@
-# jp2subs
+# Nishizumi-Translations
 
-jp2subs is a Windows-friendly CLI/GUI tool that turns Japanese audio/video into high-fidelity transcripts and subtitles. The pipeline covers ingestion, ASR (faster-whisper), optional romanization, subtitle export (SRT/VTT/ASS), and mux/burn with ffmpeg. Translation used to be bundled but has been removed because maintaining it in the pipeline is too complex. Use a local LLM, DeepL, or a chatbot like ChatGPT to translate the generated transcripts if needed.
+Windows-friendly CLI/GUI tool that turns Japanese audio/video into high-fidelity transcripts and subtitles. The pipeline covers ingestion, ASR (faster-whisper), optional romanization, subtitle export (SRT/VTT/ASS), and mux/burn with ffmpeg. Translation used to be bundled but has been removed because maintaining it in the pipeline is too complex. Use a local LLM, DeepL, or a chatbot like ChatGPT to translate the generated transcripts if needed.
 
 ## Key features
 - Accepts videos (mp4/mkv/webm/etc.) and audio files (flac/mp3/wav/m4a/mka).
