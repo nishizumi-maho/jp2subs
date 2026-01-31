@@ -100,6 +100,10 @@ QTabWidget::pane {{
     margin-top: 4px;
 }}
 
+QTabBar {{
+    border: none;
+}}
+
 QTabBar::tab {{
     background-color: transparent;
     color: {TEXT_SECONDARY};
@@ -107,6 +111,7 @@ QTabBar::tab {{
     border-radius: 10px;
     margin-right: 4px;
     font-weight: 500;
+    border: none;
 }}
 
 QTabBar::tab:selected {{
